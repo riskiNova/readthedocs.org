@@ -1011,11 +1011,22 @@ def sync_callback(_, version_pk, commit, *args, **kwargs):
 
 @app.task()
 def finish_inactive_builds():
+    delta = datetime.timedelta(hours=1, minutes=30)
     query = (~Q(state=BUILD_STATE_FINISHED) &
-             Q(date__lte=datetime.datetime.now() - datetime.timedelta(minutes=45)))
-    # TODO: consider ``poject.container_time_limit`` since it could be bigger than 45 minutes
-    for build in Build.objects.filter(query):
+             Q(date__lte=datetime.datetime.now() - delta))
+
+    builds = Build.objects.filter(query)[:50]
+    for build in builds:
         build.success = False
         build.state = BUILD_STATE_FINISHED
-        build.error = 'This build was terminated due to inactivity.'
+        build.error = (
+            'This build was terminated due to inactivity. If you '
+            'continue to encounter this error, file a support '
+            'request with and reference this build id ({0}).'.format(build.pk)
+        )
         build.save()
+
+    log.info(
+        'Builds marked as "Terminated due inactivity": %s',
+        builds.count(),
+    )
